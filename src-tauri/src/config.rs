@@ -90,14 +90,17 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// Per-user application directory; also holds the extracted WinDivert files.
+    pub fn app_dir() -> PathBuf {
+        let dir = dirs::config_dir()
+            .map(|d| d.join("Pinroute"))
+            .unwrap_or_else(|| PathBuf::from("."));
+        let _ = fs::create_dir_all(&dir);
+        dir
+    }
+
     pub fn config_path() -> PathBuf {
-        if let Some(config_dir) = dirs::config_dir() {
-            let app_dir = config_dir.join("Pinroute");
-            let _ = fs::create_dir_all(&app_dir);
-            app_dir.join("config.json")
-        } else {
-            PathBuf::from("config.json")
-        }
+        Self::app_dir().join("config.json")
     }
 
     pub fn load() -> Self {

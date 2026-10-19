@@ -60,6 +60,7 @@ struct RunState {
 
 pub struct WinDivertInterceptor {
     state: Mutex<Option<RunState>>,
+    api: Mutex<Option<Arc<WinDivertApi>>>,
     nat_table: NatTable,
     pid_cache: PidCache,
 }
@@ -68,6 +69,7 @@ impl WinDivertInterceptor {
     pub fn new() -> Self {
         Self {
             state: Mutex::new(None),
+            api: Mutex::new(None),
             nat_table: Arc::new(RwLock::new(HashMap::new())),
             pid_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -100,16 +102,18 @@ impl WinDivertInterceptor {
         // relay's replies leave the stack as outbound; rewritten packets are injected inbound.
         let filter = "outbound and not loopback and (tcp or udp.DstPort == 443)";
         let c_filter = CString::new(filter).map_err(|e| e.to_string())?;
-        let handle = unsafe { WinDivertOpen(c_filter.as_ptr(), WINDIVERT_LAYER_NETWORK, 0, 0) };
+        let api = self.api()?;
+        let handle = unsafe { api.open(c_filter.as_ptr(), WINDIVERT_LAYER_NETWORK, 0, 0) };
         if handle.is_null() || handle as isize == -1 {
             return Err(format!(
-                "Failed to open WinDivert handle (error {}). Ensure running as Administrator and WinDivert64.sys is next to the executable.",
+                "Failed to open WinDivert handle (error {}). Ensure running as Administrator.",
                 std::io::Error::last_os_error()
             ));
         }
 
         let stop = Arc::new(AtomicBool::new(false));
         let worker = DivertWorker {
+            api: api.clone(),
             handle: handle as usize,
             stop: stop.clone(),
             nat_table: self.nat_table.clone(),
@@ -124,7 +128,7 @@ impl WinDivertInterceptor {
             .name("windivert-interceptor".to_string())
             .spawn(move || worker.run())
         {
-            unsafe { WinDivertClose(handle) };
+            unsafe { api.close(handle) };
             return Err(format!("Failed to spawn interceptor thread: {}", e));
         }
 
@@ -132,11 +136,26 @@ impl WinDivertInterceptor {
         Ok(())
     }
 
+    /// Extract the embedded WinDivert files and load the DLL once per process.
+    fn api(&self) -> Result<Arc<WinDivertApi>, String> {
+        let mut api = self.api.lock();
+        if let Some(api) = api.as_ref() {
+            return Ok(api.clone());
+        }
+        let dir = AppConfig::app_dir();
+        WinDivertApi::prepare_files(&dir)?;
+        let loaded = Arc::new(WinDivertApi::load(&dir.join("WinDivert.dll"))?);
+        *api = Some(loaded.clone());
+        Ok(loaded)
+    }
+
     pub fn stop(&self) {
         if let Some(run) = self.state.lock().take() {
             run.stop.store(true, Ordering::SeqCst);
             // Wake up the blocking WinDivertRecv; the worker thread closes the handle itself.
-            unsafe { WinDivertShutdown(run.handle as WinDivertHandle, WINDIVERT_SHUTDOWN_BOTH) };
+            if let Some(api) = self.api.lock().as_ref() {
+                unsafe { api.shutdown(run.handle as WinDivertHandle, WINDIVERT_SHUTDOWN_BOTH) };
+            }
         }
         self.nat_table.write().clear();
         self.invalidate_cache();
@@ -195,6 +214,7 @@ impl Packet {
 }
 
 struct DivertWorker {
+    api: Arc<WinDivertApi>,
     handle: usize,
     stop: Arc<AtomicBool>,
     nat_table: NatTable,
@@ -219,7 +239,7 @@ impl DivertWorker {
             }
 
             let ok = unsafe {
-                WinDivertRecv(self.raw(), buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut recv_len, &mut addr)
+                self.api.recv(self.raw(), buf.as_mut_ptr() as *mut _, buf.len() as u32, &mut recv_len, &mut addr)
             };
             if ok == 0 {
                 if self.stop.load(Ordering::SeqCst) {
@@ -234,7 +254,7 @@ impl DivertWorker {
                 Verdict::Pass => self.send(p, &addr),
                 Verdict::Modified => {
                     unsafe {
-                        WinDivertHelperCalcChecksums(p.as_mut_ptr() as *mut _, recv_len, &mut addr, 0);
+                        self.api.calc_checksums(p.as_mut_ptr() as *mut _, recv_len, &mut addr, 0);
                     }
                     self.send(p, &addr);
                 }
@@ -242,7 +262,7 @@ impl DivertWorker {
             }
         }
 
-        unsafe { WinDivertClose(self.raw()) };
+        unsafe { self.api.close(self.raw()) };
     }
 
     fn raw(&self) -> WinDivertHandle {
@@ -251,7 +271,7 @@ impl DivertWorker {
 
     fn send(&self, p: &[u8], addr: &WinDivertAddress) {
         unsafe {
-            WinDivertSend(self.raw(), p.as_ptr() as *const _, p.len() as u32, std::ptr::null_mut(), addr);
+            self.api.send(self.raw(), p.as_ptr() as *const _, p.len() as u32, std::ptr::null_mut(), addr);
         }
     }
 
