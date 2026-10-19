@@ -80,3 +80,6 @@ cargo build --release
 
 本项目基于 [MIT 许可证](LICENSE) 开源发布。
 网络驱动依赖包含 [WinDivert](https://reqrypt.org/windivert.html)（以动态链接库形式分发，遵循 LGPLv3/GPLv2 许可）。
+
+## 社区链接
+[Linux Do](https://linux.do)
