@@ -1,0 +1,56 @@
+name: Build Pinroute
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v3
+      with:
+        version: 8
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: './src-tauri -> target'
+
+    - name: Install frontend dependencies
+      run: pnpm install
+
+    - name: Build frontend
+      run: pnpm build
+
+    - name: Build Tauri app
+      run: |
+        cd src-tauri
+        cargo build --release
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: pinroute-windows-x64
+        path: |
+          src-tauri/target/release/pinroute.exe
+          src-tauri/windivert_bin/WinDivert.dll
+          src-tauri/windivert_bin/WinDivert64.sys
