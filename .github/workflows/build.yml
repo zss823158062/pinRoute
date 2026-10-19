@@ -3,9 +3,13 @@ name: Build Pinroute
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
@@ -54,3 +58,19 @@ jobs:
           src-tauri/target/release/pinroute.exe
           src-tauri/windivert_bin/WinDivert.dll
           src-tauri/windivert_bin/WinDivert64.sys
+
+    - name: Package release
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: pwsh
+      run: |
+        $name = "pinroute-${{ github.ref_name }}-windows-x64"
+        New-Item -ItemType Directory -Path $name | Out-Null
+        Copy-Item src-tauri/target/release/pinroute.exe, src-tauri/windivert_bin/WinDivert.dll, src-tauri/windivert_bin/WinDivert64.sys $name
+        Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: pinroute-${{ github.ref_name }}-windows-x64.zip
+        generate_release_notes: true
