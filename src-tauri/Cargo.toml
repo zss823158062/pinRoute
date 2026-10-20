@@ -1,6 +1,6 @@
 [package]
 name = "pinroute"
-version = "0.1.1"
+version = "0.1.2"
 description = "Pin Windows applications to custom proxy routes"
 authors = ["Pinroute Team"]
 license = "MIT OR Apache-2.0"
