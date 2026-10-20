@@ -39,16 +39,14 @@ jobs:
       with:
         workspaces: './src-tauri -> target'
 
+    - name: Install Tauri CLI
+      run: cargo install tauri-cli --version "^1.6" --locked
+
     - name: Install frontend dependencies
       run: pnpm install
 
-    - name: Build frontend
-      run: pnpm build
-
     - name: Build Tauri app
-      run: |
-        cd src-tauri
-        cargo build --release
+      run: pnpm tauri build
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
