@@ -67,6 +67,11 @@ pub fn list_running_processes() -> Vec<ProcessInfo> {
 }
 
 #[tauri::command]
+pub fn launch_program(path: String) -> Result<(), String> {
+    crate::launcher::launch_program(&path)
+}
+
+#[tauri::command]
 pub async fn test_proxy_connection(proxy: ProxyConfig) -> Result<String, String> {
     ProxyClient::test_proxy(&proxy).await
 }

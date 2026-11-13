@@ -174,6 +174,7 @@ onMounted(() => {
           :rules="config.rules"
           @update:rules="config.rules = $event"
           @save="saveAllConfig"
+          @toast="showToast"
         />
 
         <ProxySettings 

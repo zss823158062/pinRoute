@@ -2,7 +2,8 @@
 import { ref } from 'vue';
 import { AppRule, ProcessInfo, MatchType } from '../types';
 import { open } from '@tauri-apps/api/dialog';
-import { Plus, FolderOpen, Layers, Trash2, CheckCircle2, Circle, GitFork } from 'lucide-vue-next';
+import { invoke } from '@tauri-apps/api/tauri';
+import { Plus, FolderOpen, Layers, Trash2, CheckCircle2, Circle, GitFork, Play } from 'lucide-vue-next';
 import ProcessPickerModal from './ProcessPickerModal.vue';
 
 const props = defineProps<{
@@ -12,7 +13,27 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:rules', rules: AppRule[]): void;
   (e: 'save'): void;
+  (e: 'toast', msg: string): void;
 }>();
+
+const launchingId = ref<string | null>(null);
+
+function canLaunch(rule: AppRule): boolean {
+  return rule.match_type === 'exact' && /\.exe$/i.test(rule.path.trim());
+}
+
+async function launchRule(rule: AppRule) {
+  if (!canLaunch(rule) || launchingId.value) return;
+  launchingId.value = rule.id;
+  try {
+    await invoke('launch_program', { path: rule.path });
+    emit('toast', `已启动 ${rule.name}`);
+  } catch (err) {
+    emit('toast', `启动 ${rule.name} 失败：${err}`);
+  } finally {
+    setTimeout(() => (launchingId.value = null), 800);
+  }
+}
 
 const showPicker = ref(false);
 const showManualModal = ref(false);
@@ -165,7 +186,7 @@ function toggleChildren(rule: AppRule) {
             <th class="py-3 px-4">路径 / 匹配规则</th>
             <th class="py-3 px-4 w-28 text-center">模式</th>
             <th class="py-3 px-4 w-28 text-center" title="匹配该程序派生的所有子进程">包含子进程</th>
-            <th class="py-3 px-4 w-16 text-center">操作</th>
+            <th class="py-3 px-4 w-24 text-center">操作</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-800/50">
@@ -225,8 +246,19 @@ function toggleChildren(rule: AppRule) {
               </button>
             </td>
 
-            <!-- Delete -->
-            <td class="py-3 px-4 text-center">
+            <!-- Actions -->
+            <td class="py-3 px-4 text-center whitespace-nowrap">
+              <button
+                @click="launchRule(rule)"
+                :disabled="!canLaunch(rule) || launchingId === rule.id"
+                class="p-1 mr-1 rounded-lg transition-colors"
+                :class="canLaunch(rule)
+                  ? 'text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer'
+                  : 'text-slate-700 cursor-not-allowed'"
+                :title="canLaunch(rule) ? '启动程序' : '仅精确路径的 .exe 规则可直接启动'"
+              >
+                <Play class="w-3.5 h-3.5" :class="{ 'animate-pulse': launchingId === rule.id }" />
+              </button>
               <button 
                 @click="removeRule(rule.id)"
                 class="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"

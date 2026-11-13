@@ -5,6 +5,7 @@ mod config;
 mod engine;
 mod firewall;
 mod interceptor;
+mod launcher;
 mod privilege;
 mod process;
 mod proxy;
@@ -38,6 +39,7 @@ fn main() {
             get_proxy_status,
             list_running_processes,
             test_proxy_connection,
+            launch_program,
         ])
         .on_window_event(move |event| {
             if let tauri::WindowEvent::Destroyed = event.event() {
